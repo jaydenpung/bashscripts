@@ -1,0 +1,13 @@
+#!/bin/bash
+#source abc to set/unset
+
+if [ -z "$http_proxy" ] || [ -z "$https_proxy" ]; then
+    eval export http_proxy='http://proxy.bkrm.com.my:1080'
+    eval export https_proxy='http://proxy.bkrm.com.my:1080'
+    echo "Terminal proxy set!"
+else
+    unset var http_proxy
+    unset var https_proxy
+    echo "Terminal proxy removed!"
+fi
+

@@ -1,0 +1,23 @@
+#!/bin/sh
+
+ADDRESS="10.42.0.1"
+USER="brcib"
+NO_BACKUP=false
+
+while getopts 'n' opt; do
+    case $opt in
+        n)  NO_BACKUP=true;;
+    esac
+done
+
+TEMP_BOB=/tmp/bob2
+NEW_BOB=~/Documents/bob/bob
+BUILD_MACHINE_BOB_PATH=$USER@$ADDRESS:/home/$USER/bin
+
+if [ "$NO_BACKUP" = false ]; then
+    scp $BUILD_MACHINE_BOB_PATH/bob $TEMP_BOB
+    scp $TEMP_BOB $BUILD_MACHINE_BOB_PATH/bob2
+    rm $TEMP_BOB
+fi
+
+scp $NEW_BOB $BUILD_MACHINE_BOB_PATH/bob

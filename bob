@@ -1,0 +1,228 @@
+#!/bin/sh
+
+# -p To pull latest changes
+# -v To specify version (bo/cib/ibs)
+
+SIT=false
+UAT=false
+TOM=false
+FAST=false
+PULL=false
+SPECIFIC_WARFILE=false
+RELOAD_FORM=false
+FORM_RELOAD_VALID=false
+
+MESSAGE="BOB - Bob The Builder, that's why\n\n
+        arguments:\n\n
+        -h\t Show this help page\n
+        -r\t Reload form only (sit, uat, tom)\n
+        -f\t Fast build without clean-all and refresh-dependencies\n
+        -p\t Pull the latest changes before build\n
+        -s\t Send to which server (sit, uat), will only build if not specified\n
+        -v\t Specify which project to build (ibs/bo/cib). You\n
+        \t can specify this multiple time\n\n
+        Example of use: 'bob -p -s sit -s uat' will pull latest\n
+        changes, build all warfiles and send to sit and uat.\n
+        (Use bob2 for the previous version if there's a problem)\n\n"
+
+# ==== Configurations ====
+SOUND_ON_COMPLETE=true
+SOUND_PATH=~/Music/complete.oga
+BOB_FOLDER=~/Desktop/bob
+PROJECT_PATH=~/workspace/br/cib
+TEMP_PATH=/tmp
+FOLDERNAME=$(date +'%d_%m_%Y')
+
+WARFILE_PATH="/opt/app/war"
+FORM_PATH="/etc/br/cib"
+
+LOG_FILE=~/Desktop/bob_log.txt
+ALL_PROJECTS="ibs bo cib"
+
+SIT_ADDRESS="10.2.100.137"
+UAT_ADDRESS="10.2.100.124"
+TOM_ADDRESS="localhost"
+
+SIT_PATH=admin@$SIT_ADDRESS:$WARFILE_PATH
+UAT_PATH=admin@$UAT_ADDRESS:$WARFILE_PATH
+TOM_PATH=~/opt/tomcat/current/webapps
+
+SIT_FORM_PATH=admin@$SIT_ADDRESS:$FORM_PATH
+UAT_FORM_PATH=admin@$UAT_ADDRESS:$FORM_PATH
+TOM_FORM_PATH=~/workspace/br/cib/ibs/test/unit/
+
+
+exit_shell() {
+    paplay SOUND_PATH
+    exit
+}
+trap exit_shell 1 2 3 4 5 6 7 8 10 11 12 13 14 15
+
+
+# ==== Options checking ====
+while getopts 'rr:s:hfpv:' opt; do
+    case $opt in
+        r)  RELOAD_FORM=true;;
+        s)  SERVER_VALID=true;
+            if [ "$OPTARG" = "sit" ]; then
+                SIT=true
+            elif [ "$OPTARG" = "uat" ]; then
+                UAT=true
+            elif [ "$OPTARG" = "tom" ]; then
+                TOM=true
+            else
+                echo "====== Unkown options, please choose sit, uat or tom ======"
+                exit
+            fi;;
+        p)  PULL=true;;
+        f)  FAST=true;;
+        v)  SPECIFIC_WARFILE=true;;
+        h)  echo $MESSAGE | tee $LOG_FILE
+            exit;;
+    esac
+done
+
+OPTIND=1
+echo "===================== Selected Mode ====================="    | tee $LOG_FILE
+echo "Pull latest changes\t\t : $PULL"                              | tee $LOG_FILE
+echo "Fast Mode\t\t\t : $FAST"                                      | tee $LOG_FILE
+echo "Send to SIT\t\t\t : $SIT"                                     | tee $LOG_FILE
+echo "Send to UAT\t\t\t : $UAT"                                     | tee $LOG_FILE
+echo "Build only specific warfiles\t : $SPECIFIC_WARFILE"           | tee $LOG_FILE
+echo "Reload form\t\t\t : $RELOAD_FORM\n"                           | tee $LOG_FILE
+echo "(use 'bob -h' for the full list of arguments)"                | tee $LOG_FILE
+echo "=========================================================\n\n"| tee $LOG_FILE
+
+
+# ==== Create folders ====
+if [ "$RELOAD_FORM" = false ]; then
+    if [ ! -d "$BOB_FOLDER/$FOLDERNAME" ]; then
+        mkdir -p $BOB_FOLDER/$FOLDERNAME
+    fi
+
+    rm -rf $TEMP_PATH/$FOLDERNAME
+    mkdir $TEMP_PATH/$FOLDERNAME
+
+    if [ "$SIT" = true ]; then
+        scp -r $TEMP_PATH/$FOLDERNAME $SIT_PATH
+    fi
+    if [ "$UAT" = true ]; then
+        scp -r $TEMP_PATH/$FOLDERNAME $UAT_PATH
+    fi
+
+    rm -rf $TEMP_PATH/$FOLDERNAME
+fi
+
+
+# ==== Pull latest changes ====
+if [ "$PULL" = true ]; then
+    hgall pull -u | tee $LOG_FILE
+    echo "====== All changesets pulled ======" | tee $LOG_FILE
+fi
+
+
+# ==== Build warfiles according to project if specified ====
+while getopts 'r:s:hfpv:' opt; do
+    case $opt in
+        v)  if [ "$RELOAD_FORM" = false ]; then
+                cd $PROJECT_PATH/$OPTARG
+                CHANGESET=$(hg identify --id)
+                NUMBER=$(hg identify --num)
+
+                if [ "$FAST" = false ]
+                then
+                    grails clean-all
+                    grails refresh-dependencies
+                    grails compile
+                fi
+
+                grails prod war
+                echo "====== WarFile $OPTARG-0.1-$CHANGESET-$NUMBER-prod.war built ======" | tee $LOG_FILE
+                mv target/$OPTARG-0.1.war $BOB_FOLDER/$FOLDERNAME/$OPTARG-0.1-$CHANGESET-$NUMBER-prod.war
+                if [ "$SIT" = true ]; then
+                    scp $BOB_FOLDER/$FOLDERNAME/$OPTARG-0.1-$CHANGESET-$NUMBER-prod.war $SIT_PATH/$FOLDERNAME
+                    echo "====== WarFile $OPTARG-0.1-$CHANGESET-$NUMBER-prod.war sent to $SIT_PATH ======"
+                fi
+                if [ "$UAT" = true ]; then
+                    scp $BOB_FOLDER/$FOLDERNAME/$OPTARG-0.1-$CHANGESET-$NUMBER-prod.war $UAT_PATH/$FOLDERNAME
+                    echo "====== WarFile $OPTARG-0.1-$CHANGESET-$NUMBER-prod.war sent to $UAT_PATH ======"
+                fi
+            fi;;
+
+        r)  FORM_RELOAD_PATH=""
+            FORM_RELOAD_ADDRESS=""
+
+            if [ "$OPTARG" = "sit" ]; then
+                FORM_RELOAD_PATH=$SIT_FORM_PATH
+                FORM_RELOAD_ADDRESS=$SIT_ADDRESS
+            elif [ "$OPTARG" = "uat" ]; then
+                FORM_RELOAD_PATH=$UAT_FORM_PATH
+                FORM_RELOAD_ADDRESS=$UAT_ADDRESS
+            elif [ "$OPTARG" = "tom" ]; then
+                FORM_RELOAD_PATH=$TOM_FORM_PATH
+                FORM_RELOAD_ADDRESS=$TOM_ADDRESS
+            else
+                echo "====== Unkown options, please choose sit or uat. (eg. bob -r sit) ======"
+                exit
+            fi
+
+            echo "====== Reloading form for $OPTARG ======" | tee $LOG_FILE
+            if [ "$OPTARG" != "tom" ]; then
+                scp -r $FORM_RELOAD_PATH/formConfigurations $TEMP_PATH
+                mv $TEMP_PATH/formConfigurations $TEMP_PATH/formConfigurations_2
+                scp -r $PROJECT_PATH/ibs/test/unit/formConfigurations $FORM_RELOAD_PATH
+                scp -r $TEMP_PATH/formConfigurations_2 $FORM_RELOAD_PATH
+                rm -rf $TEMP_PATH/formConfigurations_2
+            fi
+
+            wget -e use_proxy=no http://$FORM_RELOAD_ADDRESS:9080/ibs/test/deleteForm -O /dev/null
+            wget -e use_proxy=no http://$FORM_RELOAD_ADDRESS:9080/ibs/test/createDefaultForm -O /dev/null
+            echo "====== Finish reloading form for $OPTARG ======" | tee $LOG_FILE
+
+            if [ "$SOUND_ON_COMPLETE" = true ]; then
+                paplay $SOUND_PATH
+            fi;;
+    esac
+done
+
+if [ "$RELOAD_FORM" = true ]; then
+    exit
+fi
+
+
+# ==== Build all warfiles if project not specified ====
+if [ "$SPECIFIC_WARFILE" = false ]
+then
+    for PROJECT in $ALL_PROJECTS
+    do
+        cd $PROJECT_PATH/$PROJECT
+        CHANGESET=$(hg identify --id)
+        NUMBER=$(hg identify --num)
+
+        if [ "$FAST" = false ]
+        then
+            grails clean-all
+            grails refresh-dependencies
+            grails compile
+        fi
+
+        grails prod war
+        echo "====== WarFile $PROJECT-0.1-$CHANGESET-$NUMBER-prod.war built ======" | tee $LOG_FILE
+        mv target/$PROJECT-0.1.war $BOB_FOLDER/$FOLDERNAME/$PROJECT-0.1-$CHANGESET-$NUMBER-prod.war
+        if [ "$SIT" = true ]; then
+            scp $BOB_FOLDER/$FOLDERNAME/$PROJECT-0.1-$CHANGESET-$NUMBER-prod.war $SIT_PATH/$FOLDERNAME
+            echo "====== WarFile $PROJECT-0.1-$CHANGESET-$NUMBER-prod.war sent to $SIT_PATH ======"
+        fi
+        if [ "$UAT" = true ]; then
+            scp $BOB_FOLDER/$FOLDERNAME/$PROJECT-0.1-$CHANGESET-$NUMBER-prod.war $UAT_PATH/$FOLDERNAME
+            echo "====== WarFile $PROJECT-0.1-$CHANGESET-$NUMBER-prod.war sent to $UAT_PATH ======"
+        fi
+    done
+fi
+
+echo "=========================== DONE =====================================" | tee $LOG_FILE
+
+# === Play Soung on Complete ===
+if [ "$SOUND_ON_COMPLETE" = true ]; then
+    paplay $SOUND_PATH
+fi

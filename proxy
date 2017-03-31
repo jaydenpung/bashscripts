@@ -1,0 +1,13 @@
+#!/bin/bash
+
+state=$(gsettings get org.gnome.system.proxy mode)
+
+gsettings set org.gnome.system.proxy ignore-hosts "['localhost', '10.*.*.*', '127.*.*.*', '192.168.*.*']"
+
+if [ $state == "'none'" ]; then
+        gsettings set org.gnome.system.proxy mode 'manual'
+        echo Proxy Set!
+elif [ $state == "'manual'" ]; then
+        gsettings set org.gnome.system.proxy mode 'none'
+        echo Proxy Removed!
+fi

@@ -1,0 +1,6 @@
+#!/bin/sh
+
+cd ~/workspace/br/cib/cib
+title="CIB"
+echo -e '\033]2;'$title'\007'
+grails -Dserver.port=8080
